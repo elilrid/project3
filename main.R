@@ -1,30 +1,28 @@
 library(sqldf)
-library(forecast)
+library("forecast")
 library(MASS)
 library(xlsx)
 library(fma)
 library(lubridate)
 library(tseries)
+library(pracma)
 
 ##### Data Read #####
-data = read.table("example.txt",header=TRUE,sep=",")
+data = read.table("data.txt",header=TRUE,sep=",")
 
 ##### Examine the Data #####
-data$UygunFormatGün <- as.Date(data$Gün,"%d-%m-%Y")
-query = "select Gün ,Mağaza,Lokasyon,Kod,SatıcıÜrünAdı,ANAGRUP,ALTGRUP,URUNCESIDI, SUM(SatışMiktarı) as Miktar, UygunFormatGün from data where ANAGRUP = 'anagrup1' and ALTGRUP ='alt-grup-3' group by UygunFormatGün order by UygunFormatGün"
+data$UygunFormatGun <- as.Date(data$Gun,"%d-%m-%Y")
+query = "select Gun ,Magaza,Lokasyon,Kod,SaticiurunAdi,ANAGRUP,ALTGRUP,URUNCESIDI, SUM(SatisMiktari) as Miktar, UygunFormatGun from data where ANAGRUP = 'anagrup1' and ALTGRUP ='alt-grup-2' group by UygunFormatGun order by UygunFormatGun"
 result <- sqldf(query)
-plot(result$Miktar)
-write.xlsx(result, file = "test.excelfile.xlsx",
-        sheetName = "TestSheet", row.names = FALSE)
-result$Aylık <- as.Date(cut(result$UygunFormatGün, breaks = "months"))
-query = "select Gün ,Mağaza,Lokasyon,Kod,SatıcıÜrünAdı,ANAGRUP,ALTGRUP,URUNCESIDI, SUM(Miktar) as Miktar, UygunFormatGün, Aylık from result group by Aylık order by Aylık"
-#result <-sqldf(query)
 
 ##### Time Series #####
-inds <- seq(as.Date(min(result$UygunFormatGün)), as.Date(max(result$UygunFormatGün)), by = "day")
+inds <- seq(as.Date(min(result$UygunFormatGun)), as.Date(max(result$UygunFormatGun)), by = "day")
 result.timeseries <- ts(result$Miktar,start = c(2016, as.numeric(format(inds[1], "%j"))), frequency = 365)
 x = time(result.timeseries)
 y = result.timeseries
+
+
+plot(x,y,type="l", xlab = "Time", ylab = "Quantity", main = "Alt Grup 2")
 
 ##### Check Seosanality #####
 ets(y)
@@ -36,11 +34,11 @@ fit2 <- ets(y,model="ANN")
 deviance <- 2*c(logLik(fit1) - logLik(fit2))
 df <- attributes(logLik(fit1))$df - attributes(logLik(fit2))$df
 #P value
-1-pchisq(deviance,df)
+#1-pchisq(deviance,df)
 
 ##### Auto-Correlation #####
-Acf(result.timeseries)
-Pacf(result.timeseries)
+Acf(result.timeseries, lag.max=50)
+Pacf(result.timeseries, lag.max=50)
 
 ##### Stationary Test #####
 Box.test(result.timeseries,lag=20,type="Ljung-Box")
@@ -49,15 +47,40 @@ kpss.test(result.timeseries)
 ##### Fitting #####
 
 ##### Linear Regression #####
-relation <- lm(y~x)
-a <- data.frame(y)
-result$prediction <-  predict(relation,a)
+#relation <- lm(y~x)
+#a <- data.frame(y)
+#result$prediction <-  predict(relation,a)
+
+#arima
+auto.arima(y)
+
+fit_arima <- Arima(y, order=c(2,0,0))
+fit_val <- residuals(fit_arima)
+fit_val <- fit_val + 10
+summary(fit_arima)
+result$prediction <- fit_val
+tsdisplay(fit_val)
+
+arimaforecasts <- forecast.Arima(fit_arima, h=25)
+
+plot.forecast(arimaforecasts)
 
 ##### Chi Square #####
-tbl = table(result$Miktar, result$prediction)
+tbl = table(y, fit_val)
 chisq.test(tbl)
 
 ##### Plot the result #####
-png(file = "GünlereBağlıMikar_Altgrup3.jpg")
-plot(result.timeseries,type = "o", col = "red", xlab = "ID", ylab = "Miktar", main = "Alt Grup 3")
+png(file = "GunlereBagliMikar_Altgrup2.jpg")
+
+plot(x,y, ylim=range(c(y,fit_val)),type = "l", col = "red", xlab = "", ylab = "", main = "")
+par(new=T)
+plot(x,fit_val, ylim=range(c(y,fit_val)), type = "o", col = "green", xlab = "Time", ylab = "Quantity", main = "Created Data + Arima Fit Data")
 dev.off()
+
+
+write.xlsx(result, file = "results.xlsx",
+           sheetName = "TestSheet", row.names = FALSE)
+
+
+write.xlsx(arimaforecasts, file = "forecasts.xlsx",
+           sheetName = "TestSheet", row.names = FALSE)
